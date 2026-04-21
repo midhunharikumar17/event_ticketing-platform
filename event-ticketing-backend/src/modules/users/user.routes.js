@@ -1,6 +1,16 @@
-const router = require('express').Router();
-// Phase 2 — user profile and social routes come here
-router.get('/me', require('../../middleware/authenticate'), (req, res) => {
-  res.json({ user: req.user });
-});
+const router       = require('express').Router();
+const controller   = require('./user.controller');
+const authenticate = require('../../middleware/authenticate');
+const authorize    = require('../../middleware/authorize');
+
+router.use(authenticate);
+
+router.get('/me',            controller.getMe);
+router.patch('/me',          controller.updateMe);
+router.patch('/me/password', controller.changePassword);
+
+// Admin only
+router.get('/',              authorize('admin'), controller.listUsers);
+router.delete('/:id',        authorize('admin'), controller.deactivateUser);
+
 module.exports = router;

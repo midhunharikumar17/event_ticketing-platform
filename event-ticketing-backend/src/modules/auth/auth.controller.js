@@ -9,8 +9,9 @@ const COOKIE_OPTIONS = {
 
 async function register(req, res, next) {
   try {
-    const user = await authService.register(req.body);
-    res.status(201).json({ message: 'Account created', user });
+    const { user, accessToken, rawRefresh } = await authService.register(req.body);
+    res.cookie('refreshToken', rawRefresh, COOKIE_OPTIONS);
+    res.status(201).json({ user, token: accessToken });
   } catch (err) {
     next(err);
   }

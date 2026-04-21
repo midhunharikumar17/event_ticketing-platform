@@ -1,16 +1,18 @@
 const { verifyAccessToken } = require('../utils/jwtUtils');
 
 function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: { code: 'TOKEN_MISSING', message: 'No token provided' } });
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'No token provided' });
   }
-  const token = authHeader.split(' ')[1];
+
+  const token = header.slice(7);
   try {
-    req.user = verifyAccessToken(token);
+    const payload = verifyAccessToken(token);
+    req.user = { id: payload.sub, email: payload.email, role: payload.role };
     next();
   } catch (err) {
-    return res.status(401).json({ error: { code: 'TOKEN_INVALID', message: 'Token is invalid or expired' } });
+    return res.status(401).json({ message: 'Token invalid or expired' });
   }
 }
 
