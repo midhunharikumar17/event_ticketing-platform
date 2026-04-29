@@ -54,50 +54,85 @@ async function listEvents(filters = {}) {
   return { events, total, page, pages: Math.ceil(total / limit) };
 }
 
-async function updateEvent(eventId, organizerId, data) {
+async function updateEvent(eventId, organizerId, updates) {
   const event = await Event.findById(eventId);
-  if (!event) {
-    const err = new Error('Event not found');
-    err.status = 404; err.code = 'EVENT_NOT_FOUND';
-    throw err;
-  }
+  if (!event) { const e = new Error('Event not found'); e.status = 404; throw e; }
   if (event.organizerId.toString() !== organizerId.toString()) {
-    const err = new Error('Forbidden');
-    err.status = 403; err.code = 'FORBIDDEN';
-    throw err;
+    const e = new Error('Not your event'); e.status = 403; throw e;
   }
-  if (event.status !== 'draft') {
-    const err = new Error('Only draft events can be edited');
-    err.status = 400; err.code = 'EVENT_NOT_DRAFT';
-    throw err;
+
+  // Auto-compute totalCapacity on sections if missing
+  if (updates.sections) {
+    updates.sections = updates.sections.map(sec => ({
+      ...sec,
+      totalCapacity: sec.totalCapacity || (Number(sec.rowCount || 0) * Number(sec.seatsPerRow || 0)) || 0,
+    }));
   }
-  Object.assign(event, data);
+
+  Object.assign(event, updates);
   await event.save();
   return event;
 }
 
 async function publishEvent(eventId, organizerId) {
   const event = await Event.findById(eventId);
-  if (!event) {
-    const err = new Error('Event not found');
-    err.status = 404; err.code = 'EVENT_NOT_FOUND';
-    throw err;
-  }
+  if (!event) { const e = new Error('Event not found'); e.status = 404; throw e; }
   if (event.organizerId.toString() !== organizerId.toString()) {
-    const err = new Error('Forbidden');
-    err.status = 403; err.code = 'FORBIDDEN';
-    throw err;
+    const e = new Error('Not your event'); e.status = 403; throw e;
   }
-  if (event.status !== 'draft') {
-    const err = new Error('Event is already published or cancelled');
-    err.status = 400; err.code = 'EVENT_NOT_DRAFT';
-    throw err;
-  }
-
-  await seedSeats(event);
 
   event.status = 'published';
+
+  // Fix sections — ensure totalCapacity is set on every section
+  event.sections = event.sections.map(sec => ({
+    ...sec.toObject(),
+    totalCapacity: sec.totalCapacity || (sec.rowCount * sec.seatsPerRow) || 0,
+  }));
+
   await event.save();
+  await seedSeats(event);
+  return event;
+}
+
+async function publishEventFromVenue(eventId, organizerId, { venueId, layoutId, tierMapping }) {
+  const event = await Event.findById(eventId);
+  if (!event) { const e = new Error('Event not found'); e.status = 404; throw e; }
+  if (event.organizerId.toString() !== organizerId.toString()) {
+    const e = new Error('Not your event'); e.status = 403; throw e;
+  }
+
+  const venue = await Venue.findById(venueId);
+  if (!venue) { const e = new Error('Venue not found'); e.status = 404; throw e; }
+
+  const layout = venue.layouts.id(layoutId);
+  if (!layout) { const e = new Error('Layout not found'); e.status = 404; throw e; }
+
+  // Snapshot zones onto event
+  event.venueId  = venueId;
+  event.layoutId = layoutId;
+  event.venueName    = venue.name;
+  event.venueAddress = `${venue.address}, ${venue.city}`;
+
+  // Copy zones as snapshot, wiring tier IDs from tierMapping
+  // tierMapping: { zoneName: tierId }
+  event.sections = layout.zones.map(zone => ({
+    venueZoneId:   zone._id,
+    name:          zone.name,
+    type:          zone.type,
+    tierId:        tierMapping?.[zone.name] || event.tiers[0]?._id,
+    rowCount:      zone.rowCount,
+    seatsPerRow:   zone.seatsPerRow,
+    totalCapacity: zone.totalCapacity,
+    color:         zone.color,
+    position:      zone.position,
+  }));
+
+  event.status = 'published';
+  event.maxCapacity = layout.totalCapacity;
+  await event.save();
+
+  // Seed event-specific seats from snapshot
+  await seedSeatsFromSections(event);
   return event;
 }
 
@@ -157,5 +192,5 @@ async function seedSeats(event) {
 
 module.exports = {
   createEvent, getEvent, listEvents, updateEvent,
-  publishEvent, cancelEvent, getOrganizerEvents, getAttendeeCount,
+  publishEvent,publishEventFromVenue, cancelEvent, getOrganizerEvents, getAttendeeCount,
 };

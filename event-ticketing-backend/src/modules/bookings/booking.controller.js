@@ -2,7 +2,10 @@ const bookingService = require('./booking.service');
 
 async function createBooking(req, res, next) {
   try {
-    const booking = await bookingService.createBooking(req.user.id, req.body);
+    const { eventId, tierName, quantity, seatIds, groupSessionId } = req.body;
+    const booking = await bookingService.createBooking(req.user.id, {
+      eventId, tierName, quantity, seatIds, groupSessionId,
+    });
     res.status(201).json({ success: true, booking });
   } catch (err) { next(err); }
 }

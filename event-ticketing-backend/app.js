@@ -78,16 +78,21 @@ app.use(cors({
 // Serve uploaded images statically
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Payment webhook needs raw body — must be before express.json()
-app.use('/api/payments', require('./src/modules/payments/payment.routes'));
+
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Webhook needs raw body — register it separately AFTER express.json
+// but with a custom middleware that captures raw body only for /webhook
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/payments', require('./src/modules/payments/payment.routes'));
 
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
+app.use('/api/venues', require('./src/modules/venues/venue.routes'));
 app.use('/api/auth',            require('./src/modules/auth/auth.routes'));
 app.use('/api/users',           require('./src/modules/users/user.routes'));
 app.use('/api/events',          require('./src/modules/events/event.routes'));
